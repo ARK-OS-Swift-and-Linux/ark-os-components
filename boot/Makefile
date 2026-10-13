@@ -5,6 +5,9 @@ OBJCOPY ?= objcopy
 BUILD_DIR ?= build
 LOADER_DIR ?= loader
 INCLUDE_DIR ?= include
+KERNEL_DIR ?= $(BUILD_DIR)/kernel
+KERNEL_SCRIPT ?= scripts/fetch_kernel.sh
+KERNEL_IMAGE ?= $(KERNEL_DIR)/boot/bzImage
 
 CFLAGS = -O2 -fpic -ffreestanding -fno-stack-protector -fno-stack-check \
          -fshort-wchar -mno-red-zone -mno-sse -mno-mmx \
@@ -29,9 +32,9 @@ OBJS = $(BUILD_DIR)/main.o \
 
 TARGET = ARKBOOT.EFI
 
-.PHONY: all clean esp test test-qemu run initramfs
+.PHONY: all clean clean-kernel esp test test-qemu run initramfs kernel kernel-upgrade
 
-all: $(TARGET)
+all: $(TARGET) kernel
 
 $(BUILD_DIR):
 	mkdir -p $(BUILD_DIR)
@@ -56,12 +59,22 @@ $(BUILD_DIR)/initramfs.cpio: | $(BUILD_DIR)
 	         $(BUILD_DIR)/initramfs_root/bin
 	(cd $(BUILD_DIR)/initramfs_root && find . | cpio -H newc -o > ../initramfs.cpio)
 
-esp: $(TARGET) $(BUILD_DIR)/initramfs.cpio
+kernel:
+	@chmod +x $(KERNEL_SCRIPT)
+	@$(KERNEL_SCRIPT) $(KERNEL_DIR)
+
+kernel-upgrade:
+	@chmod +x $(KERNEL_SCRIPT)
+	@FORCE_UPGRADE=1 $(KERNEL_SCRIPT) $(KERNEL_DIR)
+
+esp: $(TARGET) $(BUILD_DIR)/initramfs.cpio kernel
 	mkdir -p $(BUILD_DIR)/esp/EFI/BOOT
 	cp $(TARGET) $(BUILD_DIR)/esp/EFI/BOOT/BOOTX64.EFI
-	@if [ -f $(BUILD_DIR)/kernel/boot/bzImage ]; then \
-		cp $(BUILD_DIR)/kernel/boot/bzImage $(BUILD_DIR)/esp/EFI/BOOT/bzImage; \
-		cp $(BUILD_DIR)/kernel/boot/bzImage $(BUILD_DIR)/esp/bzImage; \
+	@if [ -f $(KERNEL_IMAGE) ]; then \
+		cp $(KERNEL_IMAGE) $(BUILD_DIR)/esp/EFI/BOOT/bzImage; \
+		cp $(KERNEL_IMAGE) $(BUILD_DIR)/esp/bzImage; \
+	else \
+		echo "[ARKBOOT] Error: $(KERNEL_IMAGE) not found!"; exit 1; \
 	fi
 	cp $(BUILD_DIR)/initramfs.cpio $(BUILD_DIR)/esp/EFI/BOOT/initramfs.cpio
 	cp $(BUILD_DIR)/initramfs.cpio $(BUILD_DIR)/esp/initramfs.cpio
@@ -81,3 +94,6 @@ run: test
 
 clean:
 	rm -rf $(BUILD_DIR)/*.o $(BUILD_DIR)/*.so $(BUILD_DIR)/esp $(BUILD_DIR)/initramfs* $(TARGET)
+
+clean-kernel:
+	rm -rf $(KERNEL_DIR)

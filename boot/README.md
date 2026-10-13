@@ -44,25 +44,51 @@ components/boot/
 ├── README.md           # Component documentation
 ├── include/
 │   └── ark_boot.h      # Bootloader structures, prototypes, and Linux ABI definitions
-└── loader/
-    ├── fs.c            # UEFI Simple File System loader (kernel & initramfs)
-    ├── graphics.c      # GOP discovery, framebuffer clearing, dot rasterization
-    ├── linux.c         # Linux 64-bit boot protocol setup, memory mapping, and handoff
-    ├── main.c          # UEFI entry point (efi_main) and boot orchestrator
-    └── serial.c        # Low-level COM1 serial diagnostics
-```
+├── loader/
+│   ├── fs.c            # UEFI Simple File System loader (kernel & initramfs)
+│   ├── graphics.c      # GOP discovery, framebuffer clearing, dot rasterization
+│   ├── linux.c         # Linux 64-bit boot protocol setup, memory mapping, and handoff
+│   ├── main.c          # UEFI entry point (efi_main) and boot orchestrator
+│   └── serial.c        # Low-level COM1 serial diagnostics
+└── scripts/
+    └── fetch_kernel.sh # Automated kernel release discovery, checksum verification, and upgrade
 
 ## Build Requirements
 
 - `gcc` with x86_64 freestanding support
 - `gnu-efi` development headers and libraries (`/usr/include/efi`, `/usr/lib/crt0-efi-x86_64.o`, `/usr/lib/libgnuefi.a`, `/usr/lib/libefi.a`)
 - `binutils` (`ld`, `objcopy` with `efi-app-x86_64` support)
+- `curl` and `jq` (or `python3`) for release checking
+- `tar` and `sha256sum` for artifact verification and extraction
 - `cpio` for minimal initramfs assembly
 - `qemu-system-x86_64` and OVMF firmware (`OVMF.4m.fd`) for emulation testing
 
+## Kernel Release Management
+
+The Makefile automatically integrates with the [ARK-OS Kernel Compilation Station](https://github.com/ARK-OS-Swift-and-Linux/ark-os-kernel-compilation-station) GitHub repository:
+
+- **Automatic Download:** If no kernel is present in `build/kernel/`, the latest release is automatically downloaded, verified with `SHA256SUMS.txt`, reassembled, and extracted.
+- **Interactive Upgrade Prompt:** When a newer release is published, the build process automatically notifies you and prompts whether to upgrade (`[y/N]`).
+- **Offline / Non-interactive:** If offline, existing local kernels are used seamlessly. Non-interactive environments default to preserving the current build.
+
+Useful commands:
+```bash
+# Check for updates and download if needed
+make kernel
+
+# Force upgrade to the latest build
+make kernel-upgrade
+
+# Skip remote network check (pure offline build)
+SKIP_KERNEL_CHECK=1 make esp
+
+# Clean downloaded kernel artifacts
+make clean-kernel
+```
+
 ## Compilation and Packaging
 
-To compile `ARKBOOT.EFI`:
+To compile `ARKBOOT.EFI` and ensure the kernel is up to date:
 
 ```bash
 make
