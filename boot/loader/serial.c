@@ -33,3 +33,19 @@ void serial_print_hex(UINT64 val) {
         serial_putc(hex_chars[(val >> i) & 0xF]);
     }
 }
+
+void serial_print_dec(UINT64 val) {
+    char buf[21];
+    int idx = 0;
+    if (val == 0) {
+        serial_putc('0');
+        return;
+    }
+    while (val > 0) {
+        buf[idx++] = (char)('0' + (val % 10));
+        val /= 10;
+    }
+    for (int i = idx - 1; i >= 0; i--) {
+        serial_putc(buf[i]);
+    }
+}
