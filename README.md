@@ -29,6 +29,29 @@ ARK-OS utilizes a Swift-first userspace architecture per [ADR-0002](file:///home
 
 ---
 
+## Build System & Root Makefile
+
+The root [Makefile](file:///home/aarav/repo/arkos/components/Makefile) provides unified build orchestration across the core system components, linking the userspace init runtime in [`runtime/arkrt`](file:///home/aarav/repo/arkos/components/runtime/arkrt) and the UEFI bootloader in [`boot`](file:///home/aarav/repo/arkos/components/boot).
+
+### Available Targets
+
+| Target | Description |
+| :--- | :--- |
+| `make` / `make all` | Builds the runtime (`starter` and `arkrt-swift`), compiles the UEFI bootloader (`ARKBOOT.EFI`), verifies the kernel, stages the initramfs, and prepares the ESP boot directory (`boot/build/esp`). |
+| `make runtime` | Builds the Stage 1 static C starter (`starter`) and Stage 2 Swift main runtime (`arkrt-swift`) under `runtime/arkrt/`. |
+| `make boot` | Compiles the UEFI bootloader application (`ARKBOOT.EFI`) under `boot/`. |
+| `make initramfs` | Packs `initramfs.cpio` containing `/sbin/arkrt`, `/sbin/arkrt-swift`, and required dynamic runtime libraries. |
+| `make kernel` | Verifies and downloads the target precompiled kernel release from GitHub if not already cached. |
+| `make kernel-upgrade` | Checks for newer kernel releases and prompts for an interactive upgrade. |
+| `make esp` | Assembles the complete EFI System Partition (`BOOTX64.EFI`, `bzImage`, and `initramfs.cpio`). |
+| `make test` / `make run` | Assembles the ESP volume and boots the entire system end-to-end in QEMU with OVMF firmware. |
+| `make clean` | Cleans build artifacts across both `runtime/arkrt/` and `boot/`. |
+| `make clean-all` | Cleans all build artifacts and purges the cached kernel image. |
+| `make help` | Displays a concise reference of all build targets. |
+
+---
+
 ## License
 
 This repository is licensed under the Apache License, Version 2.0. See [LICENSE](file:///home/aarav/repo/arkos/components/LICENSE) for details.
+
