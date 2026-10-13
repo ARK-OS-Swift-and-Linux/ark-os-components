@@ -1,26 +1,31 @@
 # ==============================================================================
 # ARK-OS Components Root Makefile
-# Orchestrates building runtime and bootloader components together.
+# Orchestrates building runtime, services, and bootloader components together.
 # ==============================================================================
 
 BOOT_DIR ?= boot
 RUNTIME_DIR ?= runtime/arkrt
+SERVICES_DIR ?= services/arkdiag
 
-.PHONY: all runtime boot initramfs esp test test-qemu run kernel kernel-upgrade clean clean-kernel clean-all help
+.PHONY: all runtime services boot initramfs esp test test-qemu run kernel kernel-upgrade clean clean-kernel clean-all help
 
-# Default target: build the runtime, bootloader, initramfs, and assemble the ESP boot directory
-all: runtime boot esp
+# Default target: build runtime, services, bootloader, initramfs, and assemble ESP
+all: runtime services boot esp
 
 # Build the ARK-OS userspace init runtime (starter and arkrt-swift)
 runtime:
 	$(MAKE) -C $(RUNTIME_DIR)
 
+# Build system services (arkdiag)
+services:
+	$(MAKE) -C $(SERVICES_DIR)
+
 # Build the ARK-OS UEFI bootloader (ARKBOOT.EFI) and verify the kernel
 boot:
 	$(MAKE) -C $(BOOT_DIR)
 
-# Assemble the initramfs containing the PID 1 starter and Swift main runtime
-initramfs: runtime
+# Assemble the initramfs containing the PID 1 starter, Swift runtime, and services
+initramfs: runtime services
 	$(MAKE) -C $(BOOT_DIR) initramfs
 
 # Verify or download the Linux kernel binary
@@ -32,7 +37,7 @@ kernel-upgrade:
 	$(MAKE) -C $(BOOT_DIR) kernel-upgrade
 
 # Assemble the full EFI System Partition (ESP) image with bootloader, kernel, and initramfs
-esp: runtime
+esp: runtime services
 	$(MAKE) -C $(BOOT_DIR) esp
 
 # Launch the end-to-end boot in QEMU with OVMF firmware
@@ -43,9 +48,10 @@ test-qemu: test
 
 run: test
 
-# Clean build artifacts in both runtime and boot components
+# Clean build artifacts across all components
 clean:
 	$(MAKE) -C $(RUNTIME_DIR) clean
+	$(MAKE) -C $(SERVICES_DIR) clean
 	$(MAKE) -C $(BOOT_DIR) clean
 
 # Remove cached kernel binaries
@@ -57,13 +63,14 @@ clean-all: clean clean-kernel
 
 help:
 	@echo "ARK-OS Components Build Targets:"
-	@echo "  all            - Build runtime, bootloader, initramfs, and assemble ESP (default)"
+	@echo "  all            - Build runtime, services, bootloader, initramfs, and assemble ESP (default)"
 	@echo "  runtime        - Build C PID 1 starter and Swift main runtime in $(RUNTIME_DIR)"
+	@echo "  services       - Build system services in $(SERVICES_DIR)"
 	@echo "  boot           - Build UEFI bootloader (ARKBOOT.EFI) in $(BOOT_DIR)"
-	@echo "  initramfs      - Build initramfs.cpio staging runtime binaries and dependencies"
+	@echo "  initramfs      - Build initramfs.cpio staging runtime, services, and dependencies"
 	@echo "  kernel         - Verify and download kernel if needed"
 	@echo "  kernel-upgrade - Check for kernel updates and prompt to upgrade"
 	@echo "  esp            - Build all components and stage to $(BOOT_DIR)/build/esp"
 	@echo "  test / run     - Build ESP and launch QEMU/OVMF virtual machine"
-	@echo "  clean          - Clean build artifacts in runtime and boot"
+	@echo "  clean          - Clean build artifacts in runtime, services, and boot"
 	@echo "  clean-all      - Clean all build artifacts including kernel cache"

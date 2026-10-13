@@ -2,9 +2,13 @@ module Musl [system] {
     header "/usr/lib/musl/include/stdio.h"
     header "/usr/lib/musl/include/unistd.h"
     header "/usr/lib/musl/include/stdlib.h"
+    header "/usr/lib/musl/include/string.h"
     header "/usr/lib/musl/include/signal.h"
     header "/usr/lib/musl/include/sys/wait.h"
     header "/usr/lib/musl/include/errno.h"
     header "/usr/lib/musl/include/fcntl.h"
+    header "/usr/lib/musl/include/time.h"
+    header "/usr/lib/musl/include/sys/time.h"
+    header "/usr/lib/musl/include/sys/types.h"
     export *
 }

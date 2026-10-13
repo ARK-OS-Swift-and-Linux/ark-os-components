@@ -49,14 +49,19 @@ $(TARGET): $(BUILD_DIR)/arkboot.so
 	$(OBJCOPY) $(OBJCOPY_FLAGS) $< $@
 
 RUNTIME_DIR ?= ../runtime/arkrt
+SERVICES_DIR ?= ../services/arkdiag
 
 $(RUNTIME_DIR)/starter:
 	$(MAKE) -C $(RUNTIME_DIR)
+
+$(SERVICES_DIR)/arkdiag:
+	$(MAKE) -C $(SERVICES_DIR)
 
 initramfs: $(BUILD_DIR)/initramfs.cpio
 
 $(BUILD_DIR)/initramfs.cpio: $(RUNTIME_DIR)/starter | $(BUILD_DIR)
 	$(MAKE) -C $(RUNTIME_DIR)
+	@if [ -d $(SERVICES_DIR) ]; then $(MAKE) -C $(SERVICES_DIR); fi
 	rm -rf $(BUILD_DIR)/initramfs_root
 	mkdir -p $(BUILD_DIR)/initramfs_root/dev \
 	         $(BUILD_DIR)/initramfs_root/proc \
@@ -77,6 +82,10 @@ $(BUILD_DIR)/initramfs.cpio: $(RUNTIME_DIR)/starter | $(BUILD_DIR)
 		cp /usr/lib/libm.so.6 $(BUILD_DIR)/initramfs_root/usr/lib/; \
 		cp /usr/lib/libgcc_s.so.1 $(BUILD_DIR)/initramfs_root/usr/lib/; \
 		cp -d /usr/lib/libstdc++.so.6* $(BUILD_DIR)/initramfs_root/usr/lib/; \
+	fi
+	@if [ -f $(SERVICES_DIR)/arkdiag ]; then \
+		cp $(SERVICES_DIR)/arkdiag $(BUILD_DIR)/initramfs_root/sbin/arkdiag; \
+		chmod 755 $(BUILD_DIR)/initramfs_root/sbin/arkdiag; \
 	fi
 	(cd $(BUILD_DIR)/initramfs_root && find . | cpio -H newc -o > ../initramfs.cpio)
 

@@ -39,16 +39,64 @@ print("[arkrt-swift] Early userspace initialization verified.")
 print("[arkrt-swift] Entering PID 1 service lifecycle supervisor event loop.")
 fflush(stdout)
 
-// Set up child process signal handling
-signal(SIGCHLD) { _ in }
+// Async-signal-safe shutdown request flag
+var g_shutdownRequested: sig_atomic_t = 0
 
-// Main supervisor loop
+// Minimal, async-signal-safe signal handlers
+signal(SIGCHLD) { _ in }
+signal(SIGTERM) { _ in
+    g_shutdownRequested = 1
+}
+signal(SIGINT) { _ in
+    g_shutdownRequested = 1
+}
+
+// Initialize the system service supervisor
+let supervisor = ServiceSupervisor()
+
+// Register the first-party system diagnostic service if present
+let diagPath = "/sbin/arkdiag"
+if access(diagPath, X_OK) == 0 {
+    let diagService = ServiceDefinition(
+        name: "arkdiag",
+        executablePath: diagPath,
+        arguments: [],
+        restartPolicy: .onFailure(maxRestarts: 3, restartDelaySeconds: 2),
+        stopTimeoutSeconds: 5
+    )
+    supervisor.registerService(diagService)
+    supervisor.startService(named: "arkdiag")
+} else {
+    print("[arkrt-swift] Diagnostic service '\(diagPath)' not present on root filesystem.")
+    fflush(stdout)
+}
+
+var shutdownInitiated = false
+
+// Non-blocking PID 1 supervisor event loop
 while true {
-    var status: Int32 = 0
-    let reapedPid = waitpid(-1, &status, WNOHANG)
-    if reapedPid > 0 {
-        print("[arkrt-swift] Reaped terminated process (PID: \(reapedPid))")
-        fflush(stdout)
+    // 1. Non-blocking reaping of any terminated child processes
+    supervisor.reapChildren()
+
+    // 2. Timer ticks for scheduled restarts and graceful stop grace periods
+    supervisor.tick()
+
+    // 3. Handle shutdown requests cleanly
+    if g_shutdownRequested != 0 {
+        if !shutdownInitiated {
+            shutdownInitiated = true
+            print("[arkrt-swift] Termination signal received. Initiating orderly shutdown...")
+            fflush(stdout)
+            supervisor.stopAllServices()
+        }
+
+        if supervisor.areAllServicesStopped {
+            print("[arkrt-swift] All managed services stopped cleanly. Halting PID 1.")
+            fflush(stdout)
+            break
+        }
     }
-    sleep(1)
+
+    // 4. Tick interval: 250ms prevents CPU spinning while maintaining responsiveness
+    usleep(250000)
 }
