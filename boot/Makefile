@@ -59,9 +59,9 @@ $(SERVICES_DIR)/arkdiag:
 
 initramfs: $(BUILD_DIR)/initramfs.cpio
 
-$(BUILD_DIR)/initramfs.cpio: $(RUNTIME_DIR)/starter | $(BUILD_DIR)
+$(BUILD_DIR)/initramfs.cpio: $(RUNTIME_DIR)/starter $(SERVICES_DIR)/arkdiag | $(BUILD_DIR)
 	$(MAKE) -C $(RUNTIME_DIR)
-	@if [ -d $(SERVICES_DIR) ]; then $(MAKE) -C $(SERVICES_DIR); fi
+	$(MAKE) -C $(SERVICES_DIR)
 	rm -rf $(BUILD_DIR)/initramfs_root
 	mkdir -p $(BUILD_DIR)/initramfs_root/dev \
 	         $(BUILD_DIR)/initramfs_root/proc \

@@ -39,17 +39,8 @@ print("[arkrt-swift] Early userspace initialization verified.")
 print("[arkrt-swift] Entering PID 1 service lifecycle supervisor event loop.")
 fflush(stdout)
 
-// Async-signal-safe shutdown request flag
-var g_shutdownRequested: sig_atomic_t = 0
-
-// Minimal, async-signal-safe signal handlers
-signal(SIGCHLD) { _ in }
-signal(SIGTERM) { _ in
-    g_shutdownRequested = 1
-}
-signal(SIGINT) { _ in
-    g_shutdownRequested = 1
-}
+// Initialize async-signal-safe POSIX signal handlers in pure C
+arkrt_init_signals()
 
 // Initialize the system service supervisor
 let supervisor = ServiceSupervisor()
@@ -72,19 +63,22 @@ if access(diagPath, X_OK) == 0 {
 }
 
 var shutdownInitiated = false
+var shutdownStartTime: time_t = 0
+let maxShutdownGracePeriod: time_t = 15
 
 // Non-blocking PID 1 supervisor event loop
 while true {
-    // 1. Non-blocking reaping of any terminated child processes
+    // 1. Non-blocking reaping of any terminated child processes (with EINTR resilience)
     supervisor.reapChildren()
 
     // 2. Timer ticks for scheduled restarts and graceful stop grace periods
     supervisor.tick()
 
-    // 3. Handle shutdown requests cleanly
-    if g_shutdownRequested != 0 {
+    // 3. Handle shutdown requests cleanly via async-signal-safe C query
+    if arkrt_is_shutdown_requested() != 0 {
         if !shutdownInitiated {
             shutdownInitiated = true
+            shutdownStartTime = time(nil)
             print("[arkrt-swift] Termination signal received. Initiating orderly shutdown...")
             fflush(stdout)
             supervisor.stopAllServices()
@@ -92,6 +86,14 @@ while true {
 
         if supervisor.areAllServicesStopped {
             print("[arkrt-swift] All managed services stopped cleanly. Halting PID 1.")
+            fflush(stdout)
+            break
+        }
+
+        // Hard deadline fallback: ensure PID 1 never hangs indefinitely during shutdown
+        let elapsed = time(nil) - shutdownStartTime
+        if elapsed >= maxShutdownGracePeriod {
+            print("[arkrt-swift] Warning: Shutdown deadline (\(maxShutdownGracePeriod)s) reached with remaining services. Halting PID 1.")
             fflush(stdout)
             break
         }

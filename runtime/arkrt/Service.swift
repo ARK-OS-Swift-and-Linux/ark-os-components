@@ -94,6 +94,8 @@ public final class ManagedService {
     public private(set) var lastExitCode: Int32? = nil
     public private(set) var nextRestartTimestamp: time_t = 0
     public private(set) var stopInitiatedTimestamp: time_t = 0
+    public private(set) var isStopRequested: Bool = false
+    public private(set) var hasSentSigkill: Bool = false
 
     public init(definition: ServiceDefinition) {
         self.definition = definition
@@ -101,7 +103,13 @@ public final class ManagedService {
     }
 
     public func transitionToStarting() {
+        self.isStopRequested = false
+        self.hasSentSigkill = false
         self.state = .starting
+    }
+
+    public func markStopRequested() {
+        self.isStopRequested = true
     }
 
     public func transitionToRunning(pid: pid_t) {
@@ -109,21 +117,32 @@ public final class ManagedService {
         self.state = .running(pid: pid)
     }
 
-    public func transitionToStopping() {
-        if let currentPid = self.pid {
+    public func transitionToStopping(pid: pid_t? = nil) {
+        let targetPid = pid ?? self.pid
+        if let currentPid = targetPid {
+            self.pid = currentPid
             self.state = .stopping(pid: currentPid)
             self.stopInitiatedTimestamp = time(nil)
+            self.hasSentSigkill = false
         }
+    }
+
+    public func markSigkillSent() {
+        self.hasSentSigkill = true
     }
 
     public func transitionToExited(exitCode: Int32) {
         self.pid = nil
+        self.isStopRequested = false
+        self.hasSentSigkill = false
         self.lastExitCode = exitCode
         self.state = .exited(exitCode: exitCode)
     }
 
     public func transitionToFailed(reason: String, exitCode: Int32? = nil) {
         self.pid = nil
+        self.isStopRequested = false
+        self.hasSentSigkill = false
         if let code = exitCode {
             self.lastExitCode = code
         }
@@ -132,6 +151,8 @@ public final class ManagedService {
 
     public func transitionToRestarting(delaySeconds: Int) {
         self.pid = nil
+        self.isStopRequested = false
+        self.hasSentSigkill = false
         self.restartCount += 1
         self.nextRestartTimestamp = time(nil) + time_t(delaySeconds)
         self.state = .restarting(attempt: self.restartCount, nextAttemptInSeconds: delaySeconds)

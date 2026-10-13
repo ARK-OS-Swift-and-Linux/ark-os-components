@@ -8,15 +8,8 @@ let myPid = getpid()
 print("[arkdiag] ARK-OS System Diagnostic Service active (PID: \(myPid))")
 fflush(stdout)
 
-// Async-signal-safe stop flag
-var g_stopRequested: sig_atomic_t = 0
-
-signal(SIGTERM) { _ in
-    g_stopRequested = 1
-}
-signal(SIGINT) { _ in
-    g_stopRequested = 1
-}
+// Initialize async-signal-safe POSIX signal handlers in pure C
+arkrt_init_signals()
 
 func stripWhitespace(_ str: String) -> String {
     var s = str
@@ -80,7 +73,7 @@ for i in 1..<args.count {
 var heartbeatCount = 0
 
 // Main diagnostic monitoring loop
-while g_stopRequested == 0 {
+while arkrt_is_shutdown_requested() == 0 {
     heartbeatCount += 1
 
     let uptime = readFirstLine("/proc/uptime")?.split(separator: " ").first.map(String.init) ?? "unknown"
@@ -104,7 +97,7 @@ while g_stopRequested == 0 {
 
     // Sleep for 2 seconds in small increments to respond quickly to signals
     for _ in 0..<20 {
-        if g_stopRequested != 0 {
+        if arkrt_is_shutdown_requested() != 0 {
             break
         }
         usleep(100000) // 100ms
