@@ -48,15 +48,36 @@ $(BUILD_DIR)/arkboot.so: $(OBJS)
 $(TARGET): $(BUILD_DIR)/arkboot.so
 	$(OBJCOPY) $(OBJCOPY_FLAGS) $< $@
 
+RUNTIME_DIR ?= ../runtime/arkrt
+
+$(RUNTIME_DIR)/starter:
+	$(MAKE) -C $(RUNTIME_DIR)
+
 initramfs: $(BUILD_DIR)/initramfs.cpio
 
-$(BUILD_DIR)/initramfs.cpio: | $(BUILD_DIR)
+$(BUILD_DIR)/initramfs.cpio: $(RUNTIME_DIR)/starter | $(BUILD_DIR)
+	$(MAKE) -C $(RUNTIME_DIR)
 	rm -rf $(BUILD_DIR)/initramfs_root
 	mkdir -p $(BUILD_DIR)/initramfs_root/dev \
 	         $(BUILD_DIR)/initramfs_root/proc \
 	         $(BUILD_DIR)/initramfs_root/sys \
+	         $(BUILD_DIR)/initramfs_root/run \
 	         $(BUILD_DIR)/initramfs_root/sbin \
-	         $(BUILD_DIR)/initramfs_root/bin
+	         $(BUILD_DIR)/initramfs_root/bin \
+	         $(BUILD_DIR)/initramfs_root/lib64 \
+	         $(BUILD_DIR)/initramfs_root/usr/lib
+	ln -sf usr/lib $(BUILD_DIR)/initramfs_root/lib
+	cp $(RUNTIME_DIR)/starter $(BUILD_DIR)/initramfs_root/sbin/arkrt
+	chmod 755 $(BUILD_DIR)/initramfs_root/sbin/arkrt
+	@if [ -f $(RUNTIME_DIR)/arkrt-swift ]; then \
+		cp $(RUNTIME_DIR)/arkrt-swift $(BUILD_DIR)/initramfs_root/sbin/arkrt-swift; \
+		chmod 755 $(BUILD_DIR)/initramfs_root/sbin/arkrt-swift; \
+		cp /lib64/ld-linux-x86-64.so.2 $(BUILD_DIR)/initramfs_root/lib64/; \
+		cp /usr/lib/libc.so.6 $(BUILD_DIR)/initramfs_root/usr/lib/; \
+		cp /usr/lib/libm.so.6 $(BUILD_DIR)/initramfs_root/usr/lib/; \
+		cp /usr/lib/libgcc_s.so.1 $(BUILD_DIR)/initramfs_root/usr/lib/; \
+		cp -d /usr/lib/libstdc++.so.6* $(BUILD_DIR)/initramfs_root/usr/lib/; \
+	fi
 	(cd $(BUILD_DIR)/initramfs_root && find . | cpio -H newc -o > ../initramfs.cpio)
 
 kernel:

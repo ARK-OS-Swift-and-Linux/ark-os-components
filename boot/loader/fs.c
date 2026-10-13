@@ -59,8 +59,17 @@ EFI_STATUS fs_read_file(EFI_FILE_HANDLE root, const CHAR16 *path, VOID **out_buf
         return EFI_NOT_FOUND;
     }
 
+    if (file_size > 0x7FFFFFFFULL) {
+        file->Close(file);
+        return EFI_BAD_BUFFER_SIZE;
+    }
+
     pages = (UINTN)((file_size + 0xFFF) / 4096);
+    alloc_addr = 0x7FFFFFFFULL;
     status = BS->AllocatePages(AllocateMaxAddress, EfiLoaderData, pages, &alloc_addr);
+    if (EFI_ERROR(status)) {
+        status = BS->AllocatePages(AllocateAnyPages, EfiLoaderData, pages, &alloc_addr);
+    }
     if (EFI_ERROR(status)) {
         serial_print("[ARKBOOT] Error: Failed to allocate memory pages for file.\r\n");
         file->Close(file);
