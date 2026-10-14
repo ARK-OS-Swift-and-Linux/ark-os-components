@@ -65,6 +65,65 @@ Every managed service transitions through well-defined lifecycle states:
 
 ---
 
+## Declarative Service Definitions (`.serve`)
+
+Services in ARK-OS are defined declaratively using `.serve` definition files located in `/etc/ark/services.d/`. The Swift supervisor automatically discovers, parses, validates, and topologically orders all services on startup.
+
+### 1. File Grammar & Syntax
+
+- Files are UTF-8 key-value configuration files.
+- Lines with `#` or `;` as their first non-whitespace character are comments.
+- Empty lines and leading/trailing whitespace around keys and values are ignored.
+- Keys are case-insensitive and delimited from values by `=`.
+- Duplicate keys within a file and unknown keys are strictly rejected as configuration errors.
+- Configuration errors fail safely: invalid descriptors are rejected without crashing PID 1 or stalling other services.
+
+Example (`/etc/ark/services.d/arkdiag.serve`):
+
+```ini
+# System Diagnostic Service Definition
+name=arkdiag
+exec=/sbin/arkdiag
+restart=on-failure
+max_restarts=3
+restart_delay=2
+stop_timeout=5
+after=
+requires=
+```
+
+### 2. Supported Fields & Defaults
+
+| Field | Type | Bounds / Allowed Values | Default | Description |
+| :--- | :--- | :--- | :--- | :--- |
+| `name` | String | 1..64 chars `[a-zA-Z0-9_-]` | *Required* | Unique service identifier. |
+| `exec` | String | Absolute path starting with `/` | *Required* | Executable binary path. Must have `X_OK` permissions. |
+| `restart` | String | `never`, `always`, `on-failure` | `never` | Service restart policy upon process exit. |
+| `max_restarts` | Integer | `0`..`100` | `0` (`never`), `3` (other) | Maximum restart attempts before entering `.failed`. |
+| `restart_delay`| Integer | `0`..`3600` seconds | `1` | Backoff delay before executing a scheduled restart. |
+| `stop_timeout` | Integer | `1`..`300` seconds | `5` | Grace period after `SIGTERM` before escalating to `SIGKILL`. |
+| `after` | List | Comma or whitespace separated names | `[]` | Ordering directive: services that must start before this service. |
+| `requires` | List | Comma or whitespace separated names | `[]` | Hard dependency: services required for this service to run. |
+
+### 3. Dependency Semantics & Topological Ordering
+
+- **`after=A` (Ordering Directive):** If service A is present, A must start before this service. If service A is omitted or absent from the system, the directive is ignored and does not block startup.
+- **`requires=A` (Hard Dependency):**
+  - If service A is missing from the system, this service transitions to `.failed(reason: "Missing required dependency: 'A'")` and is never launched.
+  - If service A fails to start (e.g. executable missing or fork error), this service is blocked and transitions to `.failed`.
+  - If service A is stopped or fails later during runtime, any active dependent service that requires A is automatically stopped gracefully.
+- **Cycle Detection:** Kahn's algorithm detects circular dependencies prior to execution. Services involved in or downstream of a cycle transition to `.failed(reason: "Dependency cycle detected")`, while independent services start normally.
+- **Deterministic Ordering:** Ready services at every dependency level are processed in alphabetical order by name, guaranteeing identical boot order across boots.
+
+### 4. How to Add a New Service
+
+1. Create a service descriptor file `<service_name>.serve` specifying `name`, `exec`, and relevant lifecycle policies.
+2. Package the compiled executable into the root filesystem (e.g. `/sbin/<service_name>`).
+3. Place `<service_name>.serve` into `/etc/ark/services.d/` in the initramfs.
+4. No edits to `main.swift` or PID 1 source code are necessary.
+
+---
+
 ## Compilation & Testing
 
 ```bash

@@ -1,0 +1,9 @@
+# ARK-OS Service Definition: System Diagnostics Daemon
+name=arkdiag
+exec=/sbin/arkdiag
+restart=on-failure
+max_restarts=3
+restart_delay=2
+stop_timeout=5
+after=
+requires=

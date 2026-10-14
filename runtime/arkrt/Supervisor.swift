@@ -29,6 +29,209 @@ public final class ServiceSupervisor {
         return Array(services.values)
     }
 
+    /// Loads and registers all declarative '.serve' service definition files from a directory.
+    ///
+    /// - Parameter dirPath: Path to the directory containing '.serve' files.
+    /// - Returns: List of registered service names in alphabetical order.
+    @discardableResult
+    public func loadServices(fromDirectory dirPath: String) -> [String] {
+        guard let dirPtr = opendir(dirPath) else {
+            let err = currentErrno
+            if err == ENOENT {
+                print("[arkrt-swift] Notice: Service directory '\(dirPath)' does not exist.")
+            } else {
+                print("[arkrt-swift] Warning: Unable to open service directory '\(dirPath)' (errno \(err)).")
+            }
+            fflush(stdout)
+            return []
+        }
+        defer { closedir(dirPtr) }
+
+        var fileNames: [String] = []
+        while let entry = readdir(dirPtr) {
+            let nameStr: String = withUnsafeBytes(of: entry.pointee.d_name) { rawBuf in
+                guard let base = rawBuf.baseAddress else { return "" }
+                return String(cString: base.assumingMemoryBound(to: CChar.self))
+            }
+            if nameStr.hasSuffix(".serve") && !nameStr.hasPrefix(".") {
+                fileNames.append(nameStr)
+            }
+        }
+
+        // Deterministic lexicographical file ordering
+        fileNames.sort()
+
+        var loadedNames: [String] = []
+        for fileName in fileNames {
+            let fullPath = dirPath.hasSuffix("/") ? "\(dirPath)\(fileName)" : "\(dirPath)/\(fileName)"
+            do {
+                let definition = try ServiceParser.parseFile(atPath: fullPath)
+                if services[definition.name] != nil {
+                    print("[arkrt-swift] Error: Duplicate service name '\(definition.name)' defined in '\(fullPath)'. Ignoring duplicate.")
+                    fflush(stdout)
+                    continue
+                }
+                registerService(definition)
+                loadedNames.append(definition.name)
+            } catch {
+                print("[arkrt-swift] Error: Failed to load service definition from '\(fullPath)': \(error)")
+                fflush(stdout)
+            }
+        }
+
+        return loadedNames
+    }
+
+    /// Resolves dependency ordering and cycles for all unstarted (.configured) services.
+    ///
+    /// Uses Kahn's topological sort algorithm with alphabetical tie-breaking
+    /// to guarantee 100% deterministic boot order across all boots.
+    ///
+    /// - Returns: Deterministic ordered list of service names ready to start, or empty if none.
+    public func resolveStartupOrder() -> [String] {
+        let eligible = services.values.filter { $0.state == .configured }
+
+        // 1. Validate dependencies against available services and detect self-referential cycles
+        var validNames: Set<String> = []
+        for service in eligible {
+            let name = service.definition.name
+            var hasMissingRequirement = false
+
+            for req in service.definition.requires {
+                if req == name {
+                    service.transitionToFailed(reason: "Self-referential required dependency")
+                    print("[arkrt-swift] Error: Service '\(name)' has self-referential requirement on itself.")
+                    fflush(stdout)
+                    hasMissingRequirement = true
+                    break
+                }
+                if services[req] == nil {
+                    service.transitionToFailed(reason: "Missing required dependency: '\(req)'")
+                    print("[arkrt-swift] Error: Service '\(name)' requires missing service '\(req)'.")
+                    fflush(stdout)
+                    hasMissingRequirement = true
+                    break
+                }
+            }
+
+            for aft in service.definition.after {
+                if aft == name {
+                    service.transitionToFailed(reason: "Self-referential after dependency")
+                    print("[arkrt-swift] Error: Service '\(name)' is configured to start after itself.")
+                    fflush(stdout)
+                    hasMissingRequirement = true
+                    break
+                }
+            }
+
+            if !hasMissingRequirement {
+                validNames.insert(name)
+            }
+        }
+
+        // 2. Build dependency graph: predecessor -> [dependents]
+        // An edge U -> V means U must start before V.
+        var inDegree: [String: Int] = [:]
+        var dependents: [String: [String]] = [:]
+
+        for name in validNames {
+            inDegree[name] = 0
+            dependents[name] = []
+        }
+
+        for name in validNames {
+            let def = services[name]!.definition
+            var predecessors: Set<String> = []
+
+            for req in def.requires {
+                if validNames.contains(req) {
+                    predecessors.insert(req)
+                }
+            }
+            for aft in def.after {
+                if validNames.contains(aft) {
+                    predecessors.insert(aft)
+                }
+            }
+
+            inDegree[name] = predecessors.count
+            for pred in predecessors {
+                dependents[pred]?.append(name)
+            }
+        }
+
+        // 3. Kahn's algorithm with deterministic alphabetical tie-breaking
+        var ready: [String] = validNames.filter { inDegree[$0] == 0 }
+        ready.sort()
+
+        var ordered: [String] = []
+
+        while !ready.isEmpty {
+            let current = ready.removeFirst()
+            ordered.append(current)
+
+            if let deps = dependents[current] {
+                for dep in deps {
+                    guard let currentDeg = inDegree[dep] else { continue }
+                    let newDeg = currentDeg - 1
+                    inDegree[dep] = newDeg
+                    if newDeg == 0 {
+                        ready.append(dep)
+                        ready.sort() // Alphabetical deterministic tie-breaking
+                    }
+                }
+            }
+        }
+
+        // 4. Any valid service not in ordered list is in or blocked by a cycle
+        if ordered.count < validNames.count {
+            for name in validNames {
+                if !ordered.contains(name) {
+                    services[name]?.transitionToFailed(reason: "Dependency cycle detected involving '\(name)'")
+                    print("[arkrt-swift] Error: Service '\(name)' cannot be started due to a dependency cycle.")
+                    fflush(stdout)
+                }
+            }
+        }
+
+        return ordered
+    }
+
+    /// Starts all configured services in deterministic dependency order.
+    public func startAllServices() {
+        let startupOrder = resolveStartupOrder()
+
+        for name in startupOrder {
+            guard let service = services[name] else { continue }
+
+            // Ensure none of its hard required dependencies failed
+            var blocked = false
+            for req in service.definition.requires {
+                if let reqService = services[req] {
+                    switch reqService.state {
+                    case .failed(let reason):
+                        service.transitionToFailed(reason: "Required dependency '\(req)' failed (\(reason))")
+                        print("[arkrt-swift] Error: Service '\(name)' blocked because required dependency '\(req)' failed.")
+                        fflush(stdout)
+                        blocked = true
+                    case .exited(let code) where code != 0:
+                        service.transitionToFailed(reason: "Required dependency '\(req)' exited with status \(code)")
+                        print("[arkrt-swift] Error: Service '\(name)' blocked because required dependency '\(req)' failed.")
+                        fflush(stdout)
+                        blocked = true
+                    default:
+                        break
+                    }
+                }
+                if blocked { break }
+            }
+
+            if !blocked {
+                startService(named: name)
+            }
+        }
+    }
+
     /// Starts a registered service by name.
     @discardableResult
     public func startService(named name: String) -> Bool {
@@ -60,6 +263,15 @@ public final class ServiceSupervisor {
         fflush(stdout)
 
         let def = service.definition
+        if access(def.executablePath, X_OK) != 0 {
+            let err = currentErrno
+            let reason = "Executable '\(def.executablePath)' not accessible or not executable (errno \(err))"
+            service.transitionToFailed(reason: reason)
+            print("[arkrt-swift] Error: Cannot start service '\(name)': \(reason).")
+            fflush(stdout)
+            return false
+        }
+
         let cArgs: [String] = [def.executablePath] + def.arguments
         var argv: [UnsafeMutablePointer<CChar>?] = cArgs.map { strdup($0) }
         argv.append(nil)
@@ -247,6 +459,21 @@ public final class ServiceSupervisor {
         case .configured, .exited, .failed, .stopping:
             break
         }
+
+        // Stop any active services that hard-require this service
+        for other in services.values {
+            guard other.definition.name != name else { continue }
+            if other.definition.requires.contains(name) {
+                switch other.state {
+                case .running, .starting, .restarting:
+                    print("[arkrt-swift] Notice: Stopping dependent service '\(other.definition.name)' because required dependency '\(name)' is stopping.")
+                    fflush(stdout)
+                    stopService(named: other.definition.name)
+                default:
+                    break
+                }
+            }
+        }
     }
 
     /// Requests shutdown of all managed services.
@@ -339,6 +566,22 @@ public final class ServiceSupervisor {
 
         case .configured, .exited, .failed, .restarting:
             break
+        }
+
+        if case .failed = service.state {
+            for other in services.values {
+                guard other.definition.name != name else { continue }
+                if other.definition.requires.contains(name) {
+                    switch other.state {
+                    case .running, .starting, .restarting:
+                        print("[arkrt-swift] Notice: Stopping dependent service '\(other.definition.name)' because required dependency '\(name)' failed.")
+                        fflush(stdout)
+                        stopService(named: other.definition.name)
+                    default:
+                        break
+                    }
+                }
+            }
         }
     }
 

@@ -59,7 +59,7 @@ $(SERVICES_DIR)/arkdiag:
 
 initramfs: $(BUILD_DIR)/initramfs.cpio
 
-$(BUILD_DIR)/initramfs.cpio: $(RUNTIME_DIR)/starter $(SERVICES_DIR)/arkdiag | $(BUILD_DIR)
+$(BUILD_DIR)/initramfs.cpio: $(RUNTIME_DIR)/starter $(SERVICES_DIR)/arkdiag $(SERVICES_DIR)/arkdiag.serve | $(BUILD_DIR)
 	$(MAKE) -C $(RUNTIME_DIR)
 	$(MAKE) -C $(SERVICES_DIR)
 	rm -rf $(BUILD_DIR)/initramfs_root
@@ -70,7 +70,8 @@ $(BUILD_DIR)/initramfs.cpio: $(RUNTIME_DIR)/starter $(SERVICES_DIR)/arkdiag | $(
 	         $(BUILD_DIR)/initramfs_root/sbin \
 	         $(BUILD_DIR)/initramfs_root/bin \
 	         $(BUILD_DIR)/initramfs_root/lib64 \
-	         $(BUILD_DIR)/initramfs_root/usr/lib
+	         $(BUILD_DIR)/initramfs_root/usr/lib \
+	         $(BUILD_DIR)/initramfs_root/etc/ark/services.d
 	ln -sf usr/lib $(BUILD_DIR)/initramfs_root/lib
 	cp $(RUNTIME_DIR)/starter $(BUILD_DIR)/initramfs_root/sbin/arkrt
 	chmod 755 $(BUILD_DIR)/initramfs_root/sbin/arkrt
@@ -86,6 +87,10 @@ $(BUILD_DIR)/initramfs.cpio: $(RUNTIME_DIR)/starter $(SERVICES_DIR)/arkdiag | $(
 	@if [ -f $(SERVICES_DIR)/arkdiag ]; then \
 		cp $(SERVICES_DIR)/arkdiag $(BUILD_DIR)/initramfs_root/sbin/arkdiag; \
 		chmod 755 $(BUILD_DIR)/initramfs_root/sbin/arkdiag; \
+	fi
+	@if [ -f $(SERVICES_DIR)/arkdiag.serve ]; then \
+		cp $(SERVICES_DIR)/arkdiag.serve $(BUILD_DIR)/initramfs_root/etc/ark/services.d/arkdiag.serve; \
+		chmod 644 $(BUILD_DIR)/initramfs_root/etc/ark/services.d/arkdiag.serve; \
 	fi
 	(cd $(BUILD_DIR)/initramfs_root && find . | cpio -H newc -o > ../initramfs.cpio)
 

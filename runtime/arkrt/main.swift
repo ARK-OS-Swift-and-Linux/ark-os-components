@@ -45,22 +45,10 @@ arkrt_init_signals()
 // Initialize the system service supervisor
 let supervisor = ServiceSupervisor()
 
-// Register the first-party system diagnostic service if present
-let diagPath = "/sbin/arkdiag"
-if access(diagPath, X_OK) == 0 {
-    let diagService = ServiceDefinition(
-        name: "arkdiag",
-        executablePath: diagPath,
-        arguments: [],
-        restartPolicy: .onFailure(maxRestarts: 3, restartDelaySeconds: 2),
-        stopTimeoutSeconds: 5
-    )
-    supervisor.registerService(diagService)
-    supervisor.startService(named: "arkdiag")
-} else {
-    print("[arkrt-swift] Diagnostic service '\(diagPath)' not present on root filesystem.")
-    fflush(stdout)
-}
+// Discover and launch system services from declarative definitions
+let serviceDefinitionsDir = "/etc/ark/services.d"
+supervisor.loadServices(fromDirectory: serviceDefinitionsDir)
+supervisor.startAllServices()
 
 var shutdownInitiated = false
 var shutdownStartTime: time_t = 0

@@ -10,6 +10,7 @@ module Musl [system] {
     header "/usr/lib/musl/include/time.h"
     header "/usr/lib/musl/include/sys/time.h"
     header "/usr/lib/musl/include/sys/types.h"
+    header "/usr/lib/musl/include/dirent.h"
     header "signals.h"
     export *
 }

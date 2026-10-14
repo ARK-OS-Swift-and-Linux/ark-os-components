@@ -323,6 +323,362 @@ struct SupervisorTests {
 
         print("[TEST PASSED] Test 7: SIGKILL escalation for uncooperative processes")
 
+        // Test 8: Valid .serve parsing, comments, whitespace, and defaults
+        let validServeContent = """
+        # This is a comment
+        ; Another comment style
+
+        name = diag_svc
+        exec = /bin/true
+        restart = on-failure
+        max_restarts = 5
+        restart_delay = 3
+        stop_timeout = 10
+        after = svc_a, svc_b
+        requires = svc_c svc_d
+        """
+        do {
+            let def = try ServiceParser.parse(content: validServeContent)
+            assertCondition(def.name == "diag_svc", "Name must match")
+            assertCondition(def.executablePath == "/bin/true", "Exec path must match")
+            assertCondition(def.restartPolicy == .onFailure(maxRestarts: 5, restartDelaySeconds: 3), "Policy must match")
+            assertCondition(def.stopTimeoutSeconds == 10, "Stop timeout must match")
+            assertCondition(def.after == ["svc_a", "svc_b"], "After list must match: got \(def.after)")
+            assertCondition(def.requires == ["svc_c", "svc_d"], "Requires list must match: got \(def.requires)")
+        } catch {
+            print("[TEST FAILED] Unexpected error parsing valid content: \(error)")
+            exit(1)
+        }
+
+        // Test defaults
+        let minimalContent = """
+        name=minimal
+        exec=/bin/true
+        """
+        do {
+            let def = try ServiceParser.parse(content: minimalContent)
+            assertCondition(def.name == "minimal", "Name must match")
+            assertCondition(def.executablePath == "/bin/true", "Exec path must match")
+            assertCondition(def.restartPolicy == .never, "Default policy must be .never")
+            assertCondition(def.stopTimeoutSeconds == 5, "Default stop timeout must be 5")
+            assertCondition(def.after.isEmpty, "Default after list must be empty")
+            assertCondition(def.requires.isEmpty, "Default requires list must be empty")
+        } catch {
+            print("[TEST FAILED] Unexpected error parsing minimal content: \(error)")
+            exit(1)
+        }
+        print("[TEST PASSED] Test 8: Valid .serve parsing, comments, whitespace, and defaults")
+
+        // Test 9: Malformed syntax and invalid configurations
+        // 9a. Line without '='
+        do {
+            _ = try ServiceParser.parse(content: "invalid_line_without_equal")
+            print("[TEST FAILED] Expected malformedLine error")
+            exit(1)
+        } catch ServiceParseError.malformedLine {
+            // Expected
+        } catch {
+            print("[TEST FAILED] Wrong error for missing equal sign: \(error)")
+            exit(1)
+        }
+
+        // 9b. Duplicate key
+        do {
+            _ = try ServiceParser.parse(content: "name=foo\nexec=/bin/true\nname=bar")
+            print("[TEST FAILED] Expected duplicateKey error")
+            exit(1)
+        } catch ServiceParseError.duplicateKey {
+            // Expected
+        } catch {
+            print("[TEST FAILED] Wrong error for duplicate key: \(error)")
+            exit(1)
+        }
+
+        // 9c. Unknown key
+        do {
+            _ = try ServiceParser.parse(content: "name=foo\nexec=/bin/true\nunknown_key=123")
+            print("[TEST FAILED] Expected unknownKey error")
+            exit(1)
+        } catch ServiceParseError.unknownKey {
+            // Expected
+        } catch {
+            print("[TEST FAILED] Wrong error for unknown key: \(error)")
+            exit(1)
+        }
+
+        // 9d. Missing required fields
+        do {
+            _ = try ServiceParser.parse(content: "exec=/bin/true")
+            print("[TEST FAILED] Expected missingRequiredField error for name")
+            exit(1)
+        } catch ServiceParseError.missingRequiredField(let field) where field == "name" {
+            // Expected
+        } catch {
+            print("[TEST FAILED] Wrong error for missing name: \(error)")
+            exit(1)
+        }
+
+        do {
+            _ = try ServiceParser.parse(content: "name=foo")
+            print("[TEST FAILED] Expected missingRequiredField error for exec")
+            exit(1)
+        } catch ServiceParseError.missingRequiredField(let field) where field == "exec" {
+            // Expected
+        } catch {
+            print("[TEST FAILED] Wrong error for missing exec: \(error)")
+            exit(1)
+        }
+
+        // 9e. Relative executable path
+        do {
+            _ = try ServiceParser.parse(content: "name=foo\nexec=bin/true")
+            print("[TEST FAILED] Expected invalidExecutablePath error")
+            exit(1)
+        } catch ServiceParseError.invalidExecutablePath {
+            // Expected
+        } catch {
+            print("[TEST FAILED] Wrong error for relative executable path: \(error)")
+            exit(1)
+        }
+
+        // 9f. Invalid restart policy
+        do {
+            _ = try ServiceParser.parse(content: "name=foo\nexec=/bin/true\nrestart=maybe")
+            print("[TEST FAILED] Expected invalidRestartPolicy error")
+            exit(1)
+        } catch ServiceParseError.invalidRestartPolicy {
+            // Expected
+        } catch {
+            print("[TEST FAILED] Wrong error for invalid restart policy: \(error)")
+            exit(1)
+        }
+
+        // 9g. Out of bounds numeric values
+        do {
+            _ = try ServiceParser.parse(content: "name=foo\nexec=/bin/true\nmax_restarts=101")
+            print("[TEST FAILED] Expected invalidNumericValue for max_restarts > 100")
+            exit(1)
+        } catch ServiceParseError.invalidNumericValue {
+            // Expected
+        } catch {
+            print("[TEST FAILED] Wrong error for out-of-bounds max_restarts: \(error)")
+            exit(1)
+        }
+
+        do {
+            _ = try ServiceParser.parse(content: "name=foo\nexec=/bin/true\nstop_timeout=0")
+            print("[TEST FAILED] Expected invalidNumericValue for stop_timeout < 1")
+            exit(1)
+        } catch ServiceParseError.invalidNumericValue {
+            // Expected
+        } catch {
+            print("[TEST FAILED] Wrong error for stop_timeout 0: \(error)")
+            exit(1)
+        }
+        print("[TEST PASSED] Test 9: Syntax validation and error rejection")
+
+        // Test 10: Deterministic topological dependency ordering
+        let supOrdering = ServiceSupervisor()
+        let defC = ServiceDefinition(name: "service_c", executablePath: "/bin/true", after: ["service_b"])
+        let defB = ServiceDefinition(name: "service_b", executablePath: "/bin/true", after: ["service_a"])
+        let defA = ServiceDefinition(name: "service_a", executablePath: "/bin/true")
+        let defE = ServiceDefinition(name: "service_e", executablePath: "/bin/true")
+        let defD = ServiceDefinition(name: "service_d", executablePath: "/bin/true")
+
+        supOrdering.registerService(defC)
+        supOrdering.registerService(defB)
+        supOrdering.registerService(defA)
+        supOrdering.registerService(defE)
+        supOrdering.registerService(defD)
+
+        let startupOrder = supOrdering.resolveStartupOrder()
+        let expectedOrder = ["service_a", "service_b", "service_c", "service_d", "service_e"]
+        assertCondition(startupOrder == expectedOrder, "Expected deterministic startup order \(expectedOrder), got \(startupOrder)")
+        print("[TEST PASSED] Test 10: Deterministic topological dependency ordering")
+
+        // Test 11: after versus requires semantics
+        let supSemantics = ServiceSupervisor()
+        // 11a: 'after' with nonexistent service is non-fatal: service still starts
+        let defAfterNonexistent = ServiceDefinition(
+            name: "after_nonexistent",
+            executablePath: "/bin/true",
+            after: ["nonexistent_svc"]
+        )
+        supSemantics.registerService(defAfterNonexistent)
+        let orderAfter = supSemantics.resolveStartupOrder()
+        assertCondition(orderAfter.contains("after_nonexistent"), "Service with after=nonexistent must start")
+        assertCondition(supSemantics.service(named: "after_nonexistent")?.state == .configured, "Must remain .configured before start")
+
+        // 11b: 'requires' with nonexistent service fails validation immediately
+        let defRequiresNonexistent = ServiceDefinition(
+            name: "requires_nonexistent",
+            executablePath: "/bin/true",
+            requires: ["absent_dependency"]
+        )
+        supSemantics.registerService(defRequiresNonexistent)
+        let orderReq = supSemantics.resolveStartupOrder()
+        assertCondition(!orderReq.contains("requires_nonexistent"), "Service requiring missing dependency must not be in startup order")
+        guard let sReqMissing = supSemantics.service(named: "requires_nonexistent") else { exit(1) }
+        if case .failed(let reason) = sReqMissing.state {
+            assertCondition(reason.contains("Missing required dependency"), "Failure reason must note missing dependency: \(reason)")
+        } else {
+            print("[TEST FAILED] Expected .failed state for missing requirement, got \(sReqMissing.state)")
+            exit(1)
+        }
+
+        // 11c: 'requires' with a dependency that fails to start blocks dependent
+        let supCascade = ServiceSupervisor()
+        let defBaseFails = ServiceDefinition(name: "base_fails", executablePath: "/nonexistent/binary/path")
+        let defDep = ServiceDefinition(name: "dependent_on_failed", executablePath: "/bin/true", requires: ["base_fails"])
+        supCascade.registerService(defBaseFails)
+        supCascade.registerService(defDep)
+        supCascade.startAllServices()
+
+        guard let sBase = supCascade.service(named: "base_fails"),
+              let sDep = supCascade.service(named: "dependent_on_failed") else { exit(1) }
+        assertCondition(sBase.state != .running(pid: sBase.pid ?? 0), "base_fails must not be running")
+        if case .failed = sDep.state {
+            // Expected
+        } else {
+            print("[TEST FAILED] Expected dependent service to be in .failed state, got \(sDep.state)")
+            exit(1)
+        }
+        print("[TEST PASSED] Test 11: after versus requires semantics verified")
+
+        // Test 12: Dependency cycle detection and isolation
+        let supCycle = ServiceSupervisor()
+        let defCyc1 = ServiceDefinition(name: "cyc_1", executablePath: "/bin/true", requires: ["cyc_2"])
+        let defCyc2 = ServiceDefinition(name: "cyc_2", executablePath: "/bin/true", requires: ["cyc_1"])
+        let defIndep = ServiceDefinition(name: "indep", executablePath: "/bin/true")
+
+        supCycle.registerService(defCyc1)
+        supCycle.registerService(defCyc2)
+        supCycle.registerService(defIndep)
+
+        let cycleOrder = supCycle.resolveStartupOrder()
+        assertCondition(cycleOrder == ["indep"], "Only independent service must be in startup order, got \(cycleOrder)")
+
+        guard let sCyc1 = supCycle.service(named: "cyc_1"),
+              let sCyc2 = supCycle.service(named: "cyc_2"),
+              let sIndep = supCycle.service(named: "indep") else { exit(1) }
+
+        if case .failed(let reason) = sCyc1.state {
+            assertCondition(reason.contains("cycle"), "Must indicate dependency cycle: \(reason)")
+        } else {
+            print("[TEST FAILED] cyc_1 should be in .failed state, got \(sCyc1.state)")
+            exit(1)
+        }
+        if case .failed(let reason) = sCyc2.state {
+            assertCondition(reason.contains("cycle"), "Must indicate dependency cycle: \(reason)")
+        } else {
+            print("[TEST FAILED] cyc_2 should be in .failed state, got \(sCyc2.state)")
+            exit(1)
+        }
+        assertCondition(sIndep.state == .configured, "Independent service must remain configured and startable")
+
+        // Self-cycle
+        let supSelf = ServiceSupervisor()
+        let defSelf = ServiceDefinition(name: "self_cyc", executablePath: "/bin/true", requires: ["self_cyc"])
+        supSelf.registerService(defSelf)
+        let selfOrder = supSelf.resolveStartupOrder()
+        assertCondition(selfOrder.isEmpty, "Self-cycle service must not be in startup order")
+        guard let sSelf = supSelf.service(named: "self_cyc") else { exit(1) }
+        assertCondition(sSelf.state != .configured, "Self-cycle must transition to failed")
+        print("[TEST PASSED] Test 12: Dependency cycle detection and isolation")
+
+        // Test 13: Directory scanning resilience (loadServices)
+        var template = [CChar]("/tmp/ark_serve_test_XXXXXX".utf8CString)
+        guard let tmpDirPtr = mkdtemp(&template) else {
+            print("[TEST FAILED] mkdtemp failed")
+            exit(1)
+        }
+        let tmpDir = String(cString: tmpDirPtr)
+
+        func writeTestFile(_ name: String, _ content: String) {
+            let path = "\(tmpDir)/\(name)"
+            guard let fp = fopen(path, "wb") else { return }
+            defer { fclose(fp) }
+            _ = content.utf8CString.withUnsafeBufferPointer { buf in
+                fwrite(buf.baseAddress, 1, buf.count - 1, fp)
+            }
+        }
+
+        writeTestFile("10-svc_a.serve", "name=svc_a\nexec=/bin/true\nrestart=never\n")
+        writeTestFile("20-svc_b.serve", "name=svc_b\nexec=/bin/true\nafter=svc_a\n")
+        writeTestFile("99-malformed.serve", "this is not valid\n")
+        writeTestFile("ignore.txt", "name=ignored\nexec=/bin/true\n")
+        writeTestFile("duplicate.serve", "name=svc_a\nexec=/bin/true\n")
+
+        let supDir = ServiceSupervisor()
+        let loaded = supDir.loadServices(fromDirectory: tmpDir)
+
+        assertCondition(loaded == ["svc_a", "svc_b"], "Expected ['svc_a', 'svc_b'] loaded, got \(loaded)")
+        assertCondition(supDir.service(named: "svc_a") != nil, "svc_a should be registered")
+        assertCondition(supDir.service(named: "svc_b") != nil, "svc_b should be registered")
+        assertCondition(supDir.service(named: "ignored") == nil, "non-.serve file must be ignored")
+
+        // Cleanup temp directory
+        unlink("\(tmpDir)/10-svc_a.serve")
+        unlink("\(tmpDir)/20-svc_b.serve")
+        unlink("\(tmpDir)/99-malformed.serve")
+        unlink("\(tmpDir)/ignore.txt")
+        unlink("\(tmpDir)/duplicate.serve")
+        rmdir(tmpDir)
+
+        print("[TEST PASSED] Test 13: Directory scanning resilience and duplicate handling")
+
+        // Test 14: Cascading stop when a required dependency is stopped
+        let supCascadeStop = ServiceSupervisor()
+        let defBaseSleep = ServiceDefinition(
+            name: "base_sleep",
+            executablePath: "/bin/sleep",
+            arguments: ["30"],
+            restartPolicy: .never,
+            stopTimeoutSeconds: 2
+        )
+        let defDepSleep = ServiceDefinition(
+            name: "dep_sleep",
+            executablePath: "/bin/sleep",
+            arguments: ["30"],
+            restartPolicy: .never,
+            stopTimeoutSeconds: 2,
+            requires: ["base_sleep"]
+        )
+
+        supCascadeStop.registerService(defBaseSleep)
+        supCascadeStop.registerService(defDepSleep)
+        supCascadeStop.startAllServices()
+
+        guard let sBaseSleep = supCascadeStop.service(named: "base_sleep"),
+              let sDepSleep = supCascadeStop.service(named: "dep_sleep") else { exit(1) }
+
+        assertCondition(sBaseSleep.pid != nil, "base_sleep must be running")
+        assertCondition(sDepSleep.pid != nil, "dep_sleep must be running")
+
+        // Stop base_sleep -> dep_sleep should also be stopped
+        supCascadeStop.stopService(named: "base_sleep")
+
+        if case .stopping = sBaseSleep.state {} else {
+            print("[TEST FAILED] Expected base_sleep in stopping state")
+            exit(1)
+        }
+        if case .stopping = sDepSleep.state {} else {
+            print("[TEST FAILED] Expected dep_sleep in stopping state due to cascade")
+            exit(1)
+        }
+
+        // Reap both
+        for _ in 0..<20 {
+            supCascadeStop.reapChildren()
+            if case .exited = sBaseSleep.state, case .exited = sDepSleep.state {
+                break
+            }
+            usleep(50000)
+        }
+        assertCondition(sBaseSleep.state != .running(pid: sBaseSleep.pid ?? 0), "base_sleep must have exited")
+        assertCondition(sDepSleep.state != .running(pid: sDepSleep.pid ?? 0), "dep_sleep must have exited")
+        print("[TEST PASSED] Test 14: Cascading stop of dependent services")
+
         print("[TEST SUCCESS] All Service Supervisor unit/integration tests passed!")
     }
 }
