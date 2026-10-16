@@ -1,4 +1,9 @@
+#if canImport(Musl)
 import Musl
+#elseif canImport(Glibc)
+import Glibc
+#endif
+import CSignals
 
 @main
 struct SupervisorTests {

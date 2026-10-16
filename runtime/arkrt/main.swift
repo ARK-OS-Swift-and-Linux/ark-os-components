@@ -1,4 +1,9 @@
+#if canImport(Musl)
 import Musl
+#elseif canImport(Glibc)
+import Glibc
+#endif
+import CSignals
 
 // Unbuffer stdout and stderr for immediate output to the console
 setbuf(stdout, nil)

@@ -7,7 +7,7 @@ BOOT_DIR ?= boot
 RUNTIME_DIR ?= runtime/arkrt
 SERVICES_DIR ?= services/arkdiag
 
-.PHONY: all runtime services boot initramfs esp test test-qemu run kernel kernel-upgrade clean clean-kernel clean-all help
+.PHONY: all runtime services boot initramfs initramfs-target validate-initramfs-target esp esp-target test test-qemu run kernel kernel-upgrade clean clean-kernel clean-all help
 
 # Default target: build runtime, services, bootloader, initramfs, and assemble ESP
 all: runtime services boot esp
@@ -28,6 +28,14 @@ boot:
 initramfs: runtime services
 	$(MAKE) -C $(BOOT_DIR) initramfs
 
+# Assemble the target static initramfs (x86_64-swift-linux-musl)
+initramfs-target:
+	$(MAKE) -C $(BOOT_DIR) initramfs-target
+
+# Validate target static initramfs contents and linkage
+validate-initramfs-target:
+	$(MAKE) -C $(BOOT_DIR) validate-initramfs-target
+
 # Verify or download the Linux kernel binary
 kernel:
 	$(MAKE) -C $(BOOT_DIR) kernel
@@ -39,6 +47,10 @@ kernel-upgrade:
 # Assemble the full EFI System Partition (ESP) image with bootloader, kernel, and initramfs
 esp: runtime services
 	$(MAKE) -C $(BOOT_DIR) esp
+
+# Assemble the ESP image with the target static initramfs
+esp-target:
+	$(MAKE) -C $(BOOT_DIR) esp-target
 
 # Launch the end-to-end boot in QEMU with OVMF firmware
 test: esp
@@ -67,10 +79,13 @@ help:
 	@echo "  runtime        - Build C PID 1 starter and Swift main runtime in $(RUNTIME_DIR)"
 	@echo "  services       - Build system services in $(SERVICES_DIR)"
 	@echo "  boot           - Build UEFI bootloader (ARKBOOT.EFI) in $(BOOT_DIR)"
-	@echo "  initramfs      - Build initramfs.cpio staging runtime, services, and dependencies"
+	@echo "  initramfs      - Build initramfs.cpio staging runtime, services, and dependencies (host)"
+	@echo "  initramfs-target - Build initramfs-target.cpio with static Swift-on-musl runtime"
+	@echo "  validate-initramfs-target - Inspect and validate static initramfs contents and linkage"
 	@echo "  kernel         - Verify and download kernel if needed"
 	@echo "  kernel-upgrade - Check for kernel updates and prompt to upgrade"
-	@echo "  esp            - Build all components and stage to $(BOOT_DIR)/build/esp"
+	@echo "  esp            - Build all components and stage to $(BOOT_DIR)/build/esp (host)"
+	@echo "  esp-target     - Stage ESP with static Swift-on-musl initramfs"
 	@echo "  test / run     - Build ESP and launch QEMU/OVMF virtual machine"
 	@echo "  clean          - Clean build artifacts in runtime, services, and boot"
 	@echo "  clean-all      - Clean all build artifacts including kernel cache"

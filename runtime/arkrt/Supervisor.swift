@@ -1,4 +1,9 @@
+#if canImport(Musl)
 import Musl
+#elseif canImport(Glibc)
+import Glibc
+#endif
+import CSignals
 
 /// Service supervisor responsible for process launching, monitoring,
 /// restart policy enforcement, and orderly shutdown.
@@ -310,9 +315,11 @@ public final class ServiceSupervisor {
                 _exit(127)
             }
 
-            _ = argv.withUnsafeMutableBufferPointer { argvBuf in
+            argv.withUnsafeMutableBufferPointer { argvBuf in
                 envp.withUnsafeMutableBufferPointer { envpBuf in
-                    execve(def.executablePath, argvBuf.baseAddress, envpBuf.baseAddress)
+                    if let argvPtr = argvBuf.baseAddress, let envpPtr = envpBuf.baseAddress {
+                        execve(def.executablePath, argvPtr, envpPtr)
+                    }
                 }
             }
             // If execve returns, execution failed

@@ -1,0 +1,3 @@
+[submodule "libraries/libark"]
+	path = libraries/libark
+	url = git@github.com:ARK-OS-Swift-and-Linux/libark.git

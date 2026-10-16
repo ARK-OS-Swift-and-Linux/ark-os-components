@@ -1,4 +1,9 @@
+#if canImport(Musl)
 import Musl
+#elseif canImport(Glibc)
+import Glibc
+#endif
+import CSignals
 
 /// Distinct states of the service lifecycle.
 public enum ServiceState: Equatable, CustomStringConvertible {
