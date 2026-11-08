@@ -27,6 +27,13 @@ void arkrt_reset_shutdown_requested(void);
  */
 void arkrt_ignore_sigterm(void);
 
+/*
+ * Sets up controlling terminal on the given TTY device path for a child process.
+ * Calls setsid(), open(tty_path), ioctl(fd, TIOCSCTTY, 1), and dup2 onto stdio streams.
+ * Returns 0 on success, or -1 on error.
+ */
+int arkrt_setup_tty(const char *tty_path);
+
 #ifdef __cplusplus
 }
 #endif

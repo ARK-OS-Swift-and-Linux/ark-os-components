@@ -49,6 +49,9 @@ int main(int argc, char *argv[], char *envp[]) {
     if (mount("devtmpfs", "/dev", "devtmpfs", MS_NOSUID, "mode=0755") != 0 && errno != EBUSY) {
         /* devtmpfs may not be built-in or already mounted */
     }
+    if (access("/dev/tty1", F_OK) != 0) {
+        mknod("/dev/tty1", S_IFCHR | 0620, (4 << 8) | 1);
+    }
 
     /* 2. Set up standard I/O streams to /dev/console */
     int console_fd = open("/dev/console", O_RDWR);

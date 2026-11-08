@@ -2,6 +2,10 @@
 #include <signal.h>
 #include <stddef.h>
 #include <string.h>
+#include <fcntl.h>
+#include <unistd.h>
+#include <sys/ioctl.h>
+#include <termios.h>
 #include "signals.h"
 
 static volatile sig_atomic_t g_shutdown_requested = 0;
@@ -44,4 +48,23 @@ void arkrt_ignore_sigterm(void) {
     memset(&sa, 0, sizeof(sa));
     sa.sa_handler = SIG_IGN;
     sigaction(SIGTERM, &sa, NULL);
+}
+
+int arkrt_setup_tty(const char *tty_path) {
+    if (!tty_path || !*tty_path) return -1;
+    int fd = open(tty_path, O_RDWR);
+    if (fd < 0) return -1;
+    setsid();
+#ifdef TIOCSCTTY
+    ioctl(fd, TIOCSCTTY, 1);
+#else
+    ioctl(fd, 0x540E, 1);
+#endif
+    dup2(fd, STDIN_FILENO);
+    dup2(fd, STDOUT_FILENO);
+    dup2(fd, STDERR_FILENO);
+    if (fd > STDERR_FILENO) {
+        close(fd);
+    }
+    return 0;
 }

@@ -315,6 +315,15 @@ public final class ServiceSupervisor {
                 _exit(127)
             }
 
+            // Attach to dedicated TTY device if configured (e.g. /dev/tty1 for interactive shell)
+            if let ttyPath = def.tty, !ttyPath.isEmpty {
+                ttyPath.utf8CString.withUnsafeBufferPointer { buf in
+                    if let ptr = buf.baseAddress {
+                        _ = arkrt_setup_tty(ptr)
+                    }
+                }
+            }
+
             argv.withUnsafeMutableBufferPointer { argvBuf in
                 envp.withUnsafeMutableBufferPointer { envpBuf in
                     if let argvPtr = argvBuf.baseAddress, let envpPtr = envpBuf.baseAddress {

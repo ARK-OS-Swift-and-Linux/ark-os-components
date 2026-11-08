@@ -70,6 +70,7 @@ public struct ServiceDefinition: Equatable {
     public let executablePath: String
     public let arguments: [String]
     public let environment: [String: String]
+    public let tty: String?
     public let restartPolicy: ServiceRestartPolicy
     public let stopTimeoutSeconds: Int
     public let after: [String]
@@ -80,6 +81,7 @@ public struct ServiceDefinition: Equatable {
         executablePath: String,
         arguments: [String] = [],
         environment: [String: String] = [:],
+        tty: String? = nil,
         restartPolicy: ServiceRestartPolicy = .never,
         stopTimeoutSeconds: Int = 5,
         after: [String] = [],
@@ -89,6 +91,7 @@ public struct ServiceDefinition: Equatable {
         self.executablePath = executablePath
         self.arguments = arguments
         self.environment = environment
+        self.tty = tty
         self.restartPolicy = restartPolicy
         self.stopTimeoutSeconds = stopTimeoutSeconds
         self.after = after
@@ -218,6 +221,7 @@ public enum ServiceParser {
 
         var nameVal: String? = nil
         var execVal: String? = nil
+        var ttyVal: String? = nil
         var restartStr: String = "never"
         var maxRestartsVal: Int? = nil
         var restartDelayVal: Int = 1
@@ -268,6 +272,9 @@ public enum ServiceParser {
                     )
                 }
                 execVal = value
+
+            case "tty":
+                ttyVal = value.isEmpty ? nil : value
 
             case "restart":
                 let normalized = value.lowercased()
@@ -361,6 +368,7 @@ public enum ServiceParser {
             executablePath: finalExec,
             arguments: [],
             environment: [:],
+            tty: ttyVal,
             restartPolicy: policy,
             stopTimeoutSeconds: stopTimeoutVal,
             after: afterVal,
