@@ -52,6 +52,7 @@ $(TARGET): $(BUILD_DIR)/arkboot.so
 
 RUNTIME_DIR ?= ../runtime/arkrt
 SERVICES_DIR ?= ../services/arkdiag
+SHELL_DIR ?= ../shell/sash
 
 $(RUNTIME_DIR)/starter:
 	$(MAKE) -C $(RUNTIME_DIR)
@@ -94,6 +95,15 @@ $(BUILD_DIR)/initramfs.cpio: $(RUNTIME_DIR)/starter $(SERVICES_DIR)/arkdiag $(SE
 		cp $(SERVICES_DIR)/arkdiag.serve $(BUILD_DIR)/initramfs_root/etc/ark/services.d/arkdiag.serve; \
 		chmod 644 $(BUILD_DIR)/initramfs_root/etc/ark/services.d/arkdiag.serve; \
 	fi
+	@if [ -f $(SHELL_DIR)/sash ]; then \
+		cp $(SHELL_DIR)/sash $(BUILD_DIR)/initramfs_root/bin/sash; \
+		chmod 755 $(BUILD_DIR)/initramfs_root/bin/sash; \
+		ln -sf sash $(BUILD_DIR)/initramfs_root/bin/sh; \
+	fi
+	@if [ -f $(SHELL_DIR)/sash.serve ]; then \
+		cp $(SHELL_DIR)/sash.serve $(BUILD_DIR)/initramfs_root/etc/ark/services.d/sash.serve; \
+		chmod 644 $(BUILD_DIR)/initramfs_root/etc/ark/services.d/sash.serve; \
+	fi
 	(cd $(BUILD_DIR)/initramfs_root && find . | cpio -H newc -o > ../initramfs.cpio)
 
 # ==============================================================================
@@ -134,6 +144,9 @@ $(INITRAMFS_TARGET_CPIO): $(SERVICES_DIR)/arkdiag.serve | $(BUILD_DIR)
 	}
 	$(MAKE) -C $(RUNTIME_DIR) starter.target target TARGET_SYSROOT="$(TARGET_SYSROOT)" MIMALLOC_OBJ="$(MIMALLOC_OBJ)"
 	$(MAKE) -C $(SERVICES_DIR) target TARGET_SYSROOT="$(TARGET_SYSROOT)" MIMALLOC_OBJ="$(MIMALLOC_OBJ)"
+	@if [ -d "$(SHELL_DIR)" ]; then \
+		$(MAKE) -C $(SHELL_DIR) target TARGET_SYSROOT="$(TARGET_SYSROOT)" MIMALLOC_OBJ="$(MIMALLOC_OBJ)"; \
+	fi
 	rm -rf $(INITRAMFS_TARGET_ROOT)
 	mkdir -p $(INITRAMFS_TARGET_ROOT)/dev \
 	         $(INITRAMFS_TARGET_ROOT)/proc \
@@ -151,6 +164,15 @@ $(INITRAMFS_TARGET_CPIO): $(SERVICES_DIR)/arkdiag.serve | $(BUILD_DIR)
 	chmod 755 $(INITRAMFS_TARGET_ROOT)/sbin/arkdiag
 	cp $(SERVICES_DIR)/arkdiag.serve $(INITRAMFS_TARGET_ROOT)/etc/ark/services.d/arkdiag.serve
 	chmod 644 $(INITRAMFS_TARGET_ROOT)/etc/ark/services.d/arkdiag.serve
+	@if [ -f $(SHELL_DIR)/sash.target ]; then \
+		cp $(SHELL_DIR)/sash.target $(INITRAMFS_TARGET_ROOT)/bin/sash; \
+		chmod 755 $(INITRAMFS_TARGET_ROOT)/bin/sash; \
+		ln -sf sash $(INITRAMFS_TARGET_ROOT)/bin/sh; \
+	fi
+	@if [ -f $(SHELL_DIR)/sash.serve ]; then \
+		cp $(SHELL_DIR)/sash.serve $(INITRAMFS_TARGET_ROOT)/etc/ark/services.d/sash.serve; \
+		chmod 644 $(INITRAMFS_TARGET_ROOT)/etc/ark/services.d/sash.serve; \
+	fi
 	(cd $(INITRAMFS_TARGET_ROOT) && find . | cpio -H newc -o > ../initramfs-target.cpio)
 	@echo "[ARK-OS] Static musl initramfs created at $(INITRAMFS_TARGET_CPIO)"
 

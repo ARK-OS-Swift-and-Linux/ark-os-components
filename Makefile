@@ -6,11 +6,12 @@
 BOOT_DIR ?= boot
 RUNTIME_DIR ?= runtime/arkrt
 SERVICES_DIR ?= services/arkdiag
+SHELL_DIR ?= shell/sash
 
-.PHONY: all runtime services boot initramfs initramfs-target validate-initramfs-target esp esp-target test test-qemu run kernel kernel-upgrade clean clean-kernel clean-all help
+.PHONY: all runtime services shell boot initramfs initramfs-target validate-initramfs-target esp esp-target test test-qemu run kernel kernel-upgrade clean clean-kernel clean-all help
 
-# Default target: build runtime, services, bootloader, initramfs, and assemble ESP
-all: runtime services boot esp
+# Default target: build runtime, services, shell, bootloader, initramfs, and assemble ESP
+all: runtime services shell boot esp
 
 # Build the ARK-OS userspace init runtime (starter and arkrt-swift)
 runtime:
@@ -19,6 +20,10 @@ runtime:
 # Build system services (arkdiag)
 services:
 	$(MAKE) -C $(SERVICES_DIR)
+
+# Build interactive shell (sash)
+shell:
+	$(MAKE) -C $(SHELL_DIR)
 
 # Build the ARK-OS UEFI bootloader (ARKBOOT.EFI) and verify the kernel
 boot:
@@ -64,6 +69,7 @@ run: test
 clean:
 	$(MAKE) -C $(RUNTIME_DIR) clean
 	$(MAKE) -C $(SERVICES_DIR) clean
+	$(MAKE) -C $(SHELL_DIR) clean
 	$(MAKE) -C $(BOOT_DIR) clean
 
 # Remove cached kernel binaries
